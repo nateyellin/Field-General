@@ -1,0 +1,209 @@
+---
+title: "Running Back Consistency"
+author: "Nathaniel Yellin"
+date: '2022-06-21'
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+Libraries and Loading in the Play-by-Play
+```{r}
+setwd("~/Moneyball/Desktop/Moneyball")
+library(tidyverse)
+library(nflfastR)
+library(ggimage)
+library(gt)
+library(gtExtras)
+library(ggforce)
+
+pbp <- load_pbp(2011:2021)
+```
+
+Creating the two play-by-play data sets
+The reason we need to do two is because we need to group_by RBs to get the rookie season for each player, but we also need to group_by seasons to get the season by 
+season data. As a result, I do the two groupings in pbp1 and pbp2 and join them after
+```{r}
+pbp %>%
+  arrange(rusher_player_name) %>%     
+  select(play_id, rusher_player_name) %>%
+  mutate(rushes = n())
+
+pbp1 <- pbp %>%
+  filter(!is.na(rusher_player_name),
+        (two_point_attempt == 0)) %>%
+  group_by(rusher_player_name) %>%
+  ungroup(season) %>%
+  summarize(##avg_epa = mean(epa),
+            season = season,
+            first_year = first(season)) %>%
+  mutate(year = season - first_year + 1) %>%
+  distinct() ## this one has years, first years, but only career numbers
+pbp2 <- pbp %>%  
+  filter(!is.na(rusher_player_name),
+         (two_point_attempt == 0)) %>%
+  group_by(rusher_player_name,season) %>%
+  summarize(avg_epa = mean(epa),
+            epa = sum(epa),
+            avg_wpa = mean(wpa),
+            season = season,
+            rushes = n(),
+            rushyards = sum(rushing_yards),
+            recyards = sum(receiving_yards),
+            YPC = rushyards/rushes) %>%
+            filter(rushyards >= 100) %>%
+  distinct()
+```
+Note: during this, I realized there were NAs for many players, so I took one of the players who had NAs which was Arian Foster and investigated closer. When I was going through his data, I saw that his 2PT Conversion successes were returning as NA rushing yards because the computer wasn't sure if a 2PT conversion should be 2 rushing yards or none. AS you can see in lines 35 and 45, I filtered out 2PT conversions. Below is the code for Foster
+```{r}
+adrianfoster <- pbp %>%
+  filter(rusher_player_name == 'A.Foster') %>%
+  select(rusher_player_name, 
+         rushing_yards, 
+         play_type, 
+         play_id, 
+         yards_gained, 
+         season)
+
+adrianfoster[is.na(adrianfoster$rushing_yards),] 
+
+fosterplay4185 <- pbp %>%
+  filter(rusher_player_name == 'A.Foster',
+         play_id == '4185',
+         season == '2013') %>%
+  select(desc)
+```
+
+Testing the groupings and join with the first runningback, Ameer Abdullah
+```{r}
+abdullah <- inner_join(pbp1, pbp2, by = 'rusher_player_name') %>%
+  select(rusher_player_name, first_year, season.y, avg_epa, epa,avg_wpa, rushes, rushyards) %>%
+  distinct()
+```
+
+Now repeat the process for all RBs
+```{r}
+careerwithyears <- inner_join(pbp1, pbp2, by = 'rusher_player_name') %>%
+  select(rusher_player_name, first_year, season.y, avg_epa, epa, avg_wpa, rushes, rushyards, YPC) %>%
+  distinct() %>%
+  rename(season = season.y) %>%
+  mutate(years_in_league = season - first_year + 1)
+```
+
+Time to Make Graphs!
+
+Season x Rushing Yards
+```{r}
+ggplot(data = careerwithyears, aes(x=years_in_league, y = rushyards)) +
+  geom_smooth() +
+  scale_x_discrete(name = "Years Played in the NFL",
+                  limits = c(1:11)) +
+  theme_bw()+
+  labs(x = "Years Played in the NFL",
+       y = "Rush Yards",
+       subtitle = "Blue Line Represents Average Rushing Yards Across All RBs
+       and Grey Region Represents 95% Confidence Interval",
+       title = "Rushing Yards over the Seasons",
+       caption = "By Nate Yellin | Field General Analysis")+
+  theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5)) +
+  theme(plot.subtitle = element_text(hjust = 0.5))
+```
+Season x YPC
+```{r}
+careerwithyears %>% 
+  ggplot(aes(x=years_in_league, y = YPC)) +
+  geom_smooth() +
+  scale_x_discrete(name = "Years Played in the NFL",
+                   limits = c(1:11)) +
+  theme_bw()+
+  labs(x = "Years Played in the NFL",
+       y = "YPC",
+       subtitle = "Blue Line Represents Average Yards Per Carry Across All RBs
+       and Grey Region Represents 95% Confidence Interval",
+       title = "Yards per Carry over the Seasons",
+       caption = "By Nate Yellin | Field General Analysis")+
+  theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5)) +
+  theme(plot.subtitle = element_text(hjust = 0.5))
+```
+Rushes x Rushing Yards (was interesting to see how much rushes influence rushing yds)
+```{r}
+ggplot(data = careerwithyears) +
+  geom_point(aes(x = rushes, y = rushyards)) + 
+  theme_bw()+
+  labs(x = "Rushing Attempts",
+       y = "Rush Yards",
+       title = "Rush Yards vs Rushing Attempts",
+       subtitle = 'correlation of 0.9688 and r^2 of 0.9386',
+       caption = "By Nate Yellin | Field General Analysis")+
+  theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 14, face = 'bold', hjust = 0.5)) +
+  geom_smooth(aes(x = rushes, y = rushyards), method = "lm", color = "red", se = FALSE)
+
+cor(careerwithyears$rushes, careerwithyears$rushyards)
+```
+Isiah Crowell and Todd Gurley Examples
+```{r}
+crowell <- careerwithyears %>%
+  filter(rusher_player_name == 'I.Crowell')
+gurley <- careerwithyears %>%
+  filter(rusher_player_name == 'T.Gurley')
+
+ggplot() +
+  geom_smooth(data = crowell, aes(x=years_in_league, y = rushyards), se = FALSE, 
+              alpha = 1.0, color = 'orange', shape = 'dotted') +
+  scale_x_discrete(name = "Years Played in the NFL",
+                   limits = c(1:6)) +
+  theme_bw()+
+  labs(x = "Years Played in the NFL",
+       y = "Rush Yards",
+       title = "Crowell's Rushing Yards over the Seasons",
+       caption = "By Jack Gewanter | Field General Analysis")+
+  theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5)) +
+  theme(plot.subtitle = element_text(hjust = 0.5))
+
+ggplot() +
+  geom_smooth(data = crowell, aes(x=years_in_league, y = YPC), se = FALSE, 
+              alpha = 1.0, color = 'orange', shape = 'dotted') +
+  scale_x_discrete(name = "Years Played in the NFL",
+                   limits = c(1:6)) +
+  theme_bw()+
+  labs(x = "Years Played in the NFL",
+       y = "Rush Yards",
+       title = "Crowell's YPC over the Seasons",
+       caption = "By Jack Gewanter | Field General Analysis")+
+  theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5)) +
+  theme(plot.subtitle = element_text(hjust = 0.5))
+
+ggplot() +
+  geom_smooth(data = gurley, aes(x=years_in_league, y = rushyards), se = FALSE, 
+               alpha = 1.0, color = 'navy') +
+  scale_x_discrete(name = "Years Played in the NFL",
+                   limits = c(1:6)) +
+  theme_bw()+
+  labs(x = "Years Played in the NFL",
+       y = "Rush Yards",
+       title = "Gurley's Rushing Yards over the Seasons",
+       caption = "By Jack Gewanter | Field General Analysis")+
+  theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5)) +
+  theme(plot.subtitle = element_text(hjust = 0.5))
+
+ggplot() +
+  geom_smooth(data = gurley, aes(x=years_in_league, y = YPC), se = FALSE, 
+              alpha = 1.0, color = 'navy') +
+  scale_x_discrete(name = "Years Played in the NFL",
+                   limits = c(1:6)) +
+  theme_bw()+
+  labs(x = "Years Played in the NFL",
+       y = "Rush Yards",
+       title = "Gurley's YPC over the Seasons",
+       caption = "By Jack Gewanter | Field General Analysis")+
+  theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5)) +
+  theme(plot.subtitle = element_text(hjust = 0.5))
+```
+
+
+
+
+
+

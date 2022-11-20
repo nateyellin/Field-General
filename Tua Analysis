@@ -1,0 +1,39 @@
+install.packages("ggthemes")
+library(ggthemes)
+
+pbp <- nflfastR::load_pbp(2022)
+reek <- pbp %>%
+  filter(posteam == 'MIA') %>%
+  filter(play_type == 'pass') %>%
+  filter(is.na(epa) == FALSE) %>%
+  filter(receiver_player_name == 'T.Hill') %>%
+  summarize(epa = sum(epa))
+
+
+pbp_p <- pbp %>%
+  filter(qb_dropback == 1) %>%
+  filter(!is.na(epa)) %>%
+  group_by(passer) %>%
+  mutate(total_passes = n()) %>%
+  ungroup() %>%
+  filter(total_passes >= 100)
+
+pbp_p$dropback_num <- ave(pbp_p$epa, pbp_p$passer, FUN = seq_along)
+
+pbp_p$csum <- ave(pbp_p$epa, pbp_p$passer, FUN=cumsum)
+
+tua <- pbp_p %>%
+  filter(passer == "T.Tagovailoa")
+
+pbp_p %>% 
+  ggplot(aes(x = dropback_num, y = csum)) +
+  geom_smooth(aes(group = passer), color = "gray", se = FALSE, size = 1.5) +
+  geom_smooth(data = tua, aes(group = passer), color = "#008080", se = FALSE, size = 3) +
+  theme_fivethirtyeight() +
+  labs(x = "Dropback Number",
+       y = "Cumulative EPA",
+       title = "Tua's Cumulative EPA This Season",
+       subtitle = "All other passers with at least 100 dropbacks in gray",
+       caption = "By Nate Yellin | Field General Analytics")
+ggsave('tua-good.png', width = 15, height = 10, dpi = "retina")
+

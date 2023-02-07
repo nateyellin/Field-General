@@ -1,0 +1,99 @@
+library(tidyverse)
+library(nflfastR)
+library(ggimage)
+library(gt)
+
+## Clutch Gene Methodology: 
+## 1: load in pbp from 2022
+## 2: filter and wrange, group_by 
+
+pbp <- load_pbp(season = 2022)
+
+teamlist <- c("KC", "BUF", "CIN", "JAX", "LAC", "BAL", "MIA", "PHI", "SF", "MIN", "TB", "DAL", "NYG", "SEA")
+df <- pbp %>%
+  filter(play_type == "pass") %>%
+  filter((qtr == 4 | qtr == 5) | 
+           (down == 4) | 
+           (down == 3 & ydstogo >= 5)) %>%
+  filter(posteam %in% teamlist) %>%
+  filter(passer_player_name %in% c("P.Mahomes", "J.Allen","J.Burrow",
+                                   "T.Lawrence","J.Herbert","T.Huntley","S.Thompson", "J.Hurts","B.Purdy","K.Cousins", "T.Brady","D.Prescott", "D.Jones", "G.Smith")) %>%
+  group_by(passer_player_name,posteam) %>%
+  summarize(interception = sum(interception),
+            yards = sum(passing_yards, na.rm = TRUE),
+            pass_touchdown = sum(pass_touchdown),
+            cpoe = sum(cpoe, na.rm = TRUE),
+            epa = sum(epa),
+            wpa = sum(wpa),
+            n_chances = n(),
+            epa_play = epa/n_chances,
+            cpoe_play = cpoe/n_chances)
+
+
+
+
+hits_ints <- read_csv("hits_ints.csv") %>%
+  rename(posteam = defteam) %>%
+  select(posteam, team_color, team_color2, team_logo_wikipedia, team_logo_espn, team_wordmark) %>%
+  filter(posteam %in% teamlist)
+
+df <- df %>% 
+  left_join(hits_ints)
+
+# Pre-Graphing Viz
+# calculate the middle point of x and y coordinates for the top left quadrant
+  
+
+ggplot(data = df) +
+  geom_point(aes(x = pass_touchdown, y = interception), shape = NA) +
+  geom_image(aes(x = pass_touchdown, y = interception, image = team_logo_espn), 
+             size= 0.07, asp = 16/9, alpha = 0.6) +
+  geom_hline(yintercept = mean(df$interception), linetype = "dotted") +
+  geom_vline(xintercept = mean(df$pass_touchdown), linetype = "dotted") +
+  annotate("text", x = 5, y = 7.5, label = "Few Passing Touchdowns,", hjust = 0.5, vjust = 0.5, color = "red") +
+  annotate("text", x = 5, y = 7.2, label = "Many Interceptions", hjust = 0.5, vjust = 0.5, color = "red") + 
+  annotate("text", x = 16.3, y = 8.3, label = "Many Passing Touchdowns,", hjust = 0.5, vjust = 0.5) +
+  annotate("text", x = 16.3, y = 8.0, label = "Many Interceptions", hjust = 0.5, vjust = 0.5) + 
+  annotate("text", x = 3.7, y = 3.1, label = "Few Passing Touchdowns, Few Interceptions", hjust = 0.5, vjust = 0.5) +
+  annotate("text", x = 14, y = 4.2, label = "Many Passing Touchdowns,", hjust = 0.5, vjust = 0.5, color = "green2") +
+  annotate("text", x = 14, y = 3.9, label = "Few Interceptions (aka very efficient)", hjust = 0.5, vjust = 0.5, color= "green2") +
+  labs(title = "Touchdown to Interception Ratio Among Playoff Quarterbacks in Clutch Moments",
+       subtitle = "Clutch Moments defined as plays in the 4th Quarter, Overtime, on 4th Down or on 3rd and more than 5",
+       x = "Passing Touchdowns",
+       y = "Interceptions",
+       caption = "Nate Yellin | Field General Analytics")
+
+ggplot(data = df) +
+  geom_point(aes(x = pass_touchdown, y = interception), shape = NA) +
+  geom_image(aes(x = pass_touchdown, y = interception, image = team_logo_espn), 
+             size= 0.07, asp = 16/9, alpha = 0.6) +
+  geom_hline(yintercept = mean(df$interception), linetype = "dotted") +
+  geom_vline(xintercept = mean(df$pass_touchdown), linetype = "dotted") +
+  annotate("text", x = 5, y = 7.5, label = "Few Passing Touchdowns,", hjust = 0.5, vjust = 0.5, color = "red") +
+  annotate("text", x = 5, y = 7.2, label = "Many Interceptions", hjust = 0.5, vjust = 0.5, color = "red") + 
+  annotate("text", x = 16.3, y = 8.3, label = "Many Passing Touchdowns,", hjust = 0.5, vjust = 0.5) +
+  annotate("text", x = 16.3, y = 8.0, label = "Many Interceptions", hjust = 0.5, vjust = 0.5) + 
+  annotate("text", x = 3.7, y = 3.1, label = "Few Passing Touchdowns, Few Interceptions", hjust = 0.5, vjust = 0.5) +
+  annotate("text", x = 14, y = 4.2, label = "Many Passing Touchdowns,", hjust = 0.5, vjust = 0.5, color = "green2") +
+  annotate("text", x = 14, y = 3.9, label = "Few Interceptions (aka very efficient)", hjust = 0.5, vjust = 0.5, color= "green2") +
+  labs(title = "Touchdown to Interception Ratio Among Playoff Quarterbacks in Clutch Moments",
+       subtitle = "Clutch Moments defined as plays in the 4th Quarter, Overtime, on 4th Down or on 3rd and more than 5",
+       x = "Passing Touchdowns",
+       y = "Interceptions",
+       caption = "Nate Yellin | Field General Analytics")
+
+
+ggplot(data = df) +
+  geom_point(aes(x = n_chances, y = epa_play), shape = NA) +
+  geom_image(aes(x = n_chances, y = epa_play, image = team_logo_espn), 
+             size= 0.07, asp = 16/9, alpha = 0.6) +
+  geom_hline(yintercept = mean(df$epa_play), linetype = "dotted") +
+  labs(title = "EPA/Play among Playoff Quarterbacks in Clutch Moments",
+       subtitle = "Clutch Moments defined as plays in the 4th Quarter, Overtime, on 4th Down or on 3rd and more than 5",
+       x = "Passing Attempts in Clutch Moments",
+       y = "EPA/Play",
+       caption = "Nate Yellin | Field General Analytics")
+
+
+
+

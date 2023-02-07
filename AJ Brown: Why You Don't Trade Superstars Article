@@ -1,0 +1,186 @@
+
+
+
+# Setup
+
+library(tidyverse)
+library(nflfastR)
+library(lubridate)
+library(ggplot2)
+packageVersion("ggplot2")
+source("../functions/theme_sp.R")
+
+
+
+# Get Player Data
+
+
+nfl_pbp <- load_pbp(2022)
+nfl_TEN <- nfl_pbp %>%
+  filter(posteam == c('TEN', 'PHI'))
+
+
+
+```{r}
+## Robert Woods
+player_id <- "00-0030431"
+player <- "Robert Woods"
+team_color <- "#002244"
+
+## Westbrook Ikhine
+player_id <- "00-0036182"
+player <- "Nick Westbrook-Ikhine"
+team_color <- "#002244"
+
+## Burks
+player_id <- "00-0037742"
+player <- "Treylon Burks"
+team_color <- "#002244"
+
+## AJ Brown
+player_id <- "00-0035676"
+player <- "AJ Brown"
+team_color <- "#004953"
+
+w <- nfl_TEN %>%
+  filter(receiver_id == "00-0035676",
+         yards_gained > 25)
+  
+
+# Player Specific
+## 123 receptions matches nfl.com (DA)
+## 145 receptions matches nfl.com (CK)
+## 108 receptions matches nfl.com (JJx)
+player_receptions <- nfl_pbp %>% 
+  # Filter to player and regular season
+  filter(
+    season_type == "REG", 
+    receiver_player_id == player_id,
+    !is.na(receiving_yards)
+  )  %>% 
+  select(
+    game_id, season_type, week,
+    result, success,
+    receiver_player_id, receiver_player_name, receiving_yards,
+    air_yards, yards_after_catch
+  ) %>% 
+  mutate(
+    receiving_yards = case_when(
+      receiving_yards < 0 ~ 0, # Change negative yards to 0
+      receiving_yards > 30 ~ 30, # Group >= 30
+      TRUE ~ receiving_yards
+    )
+  )
+
+n_receptions <- nrow(player_receptions)
+```
+
+# Data Prep
+
+```{r}
+# Group by distance
+distance_summary <- player_receptions %>% 
+  group_by(receiving_yards) %>% 
+  summarise(
+    n = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    # For geom_point
+    dummy_0 = 0,
+    bin_size = factor(
+      case_when(
+        n <= 3 ~ "0-3",
+        n <= 7 ~ "4-7",
+        n >= 8 ~ "8+",
+        TRUE ~ "None"
+      ),
+      levels = c("0-3","4-7", "8+")
+    ),
+    curve_size = case_when(
+      n <= 3 ~ .25,
+      n <= 7 ~ .5,
+      n >= 8 ~ 1,
+      TRUE ~ 0
+    )
+  )
+
+# Median Shot Distance
+med_dist <- round(median(player_receptions$receiving_yards))
+```
+
+
+# Data Viz
+
+```{r}
+p <- ggplot() +
+  scale_y_continuous(limits = c(-.04,1), expand = c(0,0)) +
+  scale_x_continuous(
+    limits = c(0,32),
+    breaks = c(0,10,20,30),
+    labels = c("0 YARDS", "10", "20", "30+")
+  ) +
+  geom_segment(
+    aes(x = med_dist, y = 0, xend = med_dist, yend = 1),
+    color = "#252525",
+    size = .3,
+    linetype = "dashed"
+  ) +
+  geom_hline(
+    aes(yintercept = 0),
+    color = "#252525",
+    size = .9
+  ) +
+  labs(
+    title = glue::glue("{player} Reception Distances"),
+    subtitle = glue::glue("2022 NFL Season: {n_receptions} receptions"),
+    x = "",
+    size = "Receptions",
+    y = ""
+  ) +
+  theme(
+    axis.line = element_blank(),
+    axis.text.y = element_blank(),
+    panel.grid = element_blank()
+  )
+
+
+for (row in 1:nrow(distance_summary)) {
+  curve_data <- tibble(
+    distance = distance_summary$receiving_yards[row],
+    curve_size = distance_summary$curve_size[row]
+  )
+  
+  if (curve_data$distance != 0) {
+    p <- p +
+      geom_curve(
+        data = curve_data,
+        aes(
+          x = 0, 
+          y = 0, 
+          xend = distance, 
+          yend = 0
+        ), 
+        colour = team_color, 
+        size = distance_summary$curve_size[row],
+        curvature = -.95
+      )
+  }
+}
+
+p +
+  geom_point(
+    data = distance_summary,
+    aes(x = receiving_yards, y = dummy_0, size = bin_size),
+    shape = 21,
+    color = "white",
+    fill = team_color,
+    alpha = 1
+  ) +
+  scale_size_discrete(
+    range = c(2,7)
+  ) +
+  labs(caption = "By Field General Analytics | Inspiration from spelk24 (Github)", font = 20)
+  
+```
+

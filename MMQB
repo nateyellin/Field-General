@@ -84,7 +84,7 @@ qb_gt %>%
              avg_yps = "WPA") %>%
   gtExtras::gt_theme_espn() %>%
   tab_header(title = "Mediocre QBs Ranked by WPA") %>%
-  labs(subtitle =  "By Tej Seth | @tejfbanalytics | M-FANS")
+  labs(subtitle =  "By Nate Yellin | Field General Analytics")
   select(passer_player_name, avg_yps, team_wordmark)
   
   

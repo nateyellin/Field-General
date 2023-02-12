@@ -1,0 +1,250 @@
+library(tidyverse)
+library(nflfastR)
+library(ggimage)
+library(gt)
+library(kableExtra)
+
+
+## Is Travis Kelce the Greatest TE of all time?
+
+## Methodology
+
+# 1. Join position/roster data to play by play
+
+
+future::plan("multisession")
+history <- fast_scraper_roster(2006:2022)
+games <- load_pbp(2006:2022)
+joined <- games %>%
+  filter(!is.na(receiver_id)) %>%
+  left_join(history, by = c("receiver_id" = "gsis_id")) %>%
+  filter(position == "TE")
+joined <- joined %>%
+  filter(position == "TE") %>%
+  group_by(receiver_player_name) %>%
+  mutate(plays = n()) %>%
+  mutate(tgt = sum(complete_pass + incomplete_pass))
+
+ten_years_stats <- joined %>% 
+  group_by(receiver_player_name, season.y) %>%
+  mutate(tgt = sum(complete_pass + incomplete_pass)) %>%
+  filter(tgt >= 500) %>%
+  filter(season.y %in% c('2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022')) %>%
+  unique() %>%
+  ungroup(season.y) %>%
+  filter(complete_pass == 1, air_yards < yardline_100, !is.na(xyac_epa)) %>%
+  summarize(
+    Team = posteam,
+    epa_oe = mean(yac_epa - xyac_epa),
+    actual_fd = mean(first_down),
+    expected_fd = mean(xyac_fd),
+    fd_oe = mean(first_down - xyac_fd)
+  ) %>%
+  arrange(-epa_oe)
+   ## %>%knitr::kable(digits = 3)
+
+ten_years_stats <- ten_years_stats %>%
+  unique()
+  
+View(teams_colors_logos)
+
+ten_years_stats <- ten_years_stats %>%
+  left_join(teams_colors_logos, by = c("Team" = "team_abbr"))
+
+te_gt <- ten_years_stats
+
+waller_fdoe <- te_gt %>%
+  filter(receiver_player_name == "D.Waller",
+         Team == "LV") %>%
+  select(receiver_player_name, Team, team_wordmark, fd_oe) %>%
+  mutate(fd_oe = round(fd_oe, digits = 4))
+waller_epa <- te_gt %>%
+  filter(receiver_player_name == "D.Waller",
+         Team == "LV") %>%
+  select(receiver_player_name, Team, team_wordmark, epa_oe) %>%
+  mutate(epa_oe = round(epa_oe, digits = 4))
+
+te_gt_unique <- te_gt[!duplicated(te_gt$receiver_player_name), ] %>%
+  mutate(fd_oe = round(fd_oe, digits = 4),
+         epa_oe = round(epa_oe, digits = 4))
+
+
+
+te_gt_unique %>%
+  as.data.frame() %>%
+  gt() %>%
+  cols_label(receiver_player_name = "Tight End",
+             Team = "Team",
+             team_wordmark = "",
+             fd_oe = "First Downs OE",
+             epa_oe = "EPA/Play OE") %>%
+  gtExtras::gt_img_rows(team_wordmark)
+
+## Create Visualizations now
+
+# First, Create the First Downs Over Expected Table
+
+fdoe_graph <- te_gt_unique %>%
+  select(receiver_player_name, Team, team_wordmark, fd_oe) %>%
+  arrange(-fd_oe) %>%
+  head(10)
+
+fdoe_graph[5,] <- waller_fdoe
+
+fdoe_graph %>%
+  as.data.frame() %>%
+  head(10) %>%
+  gt() %>%
+  cols_label(receiver_player_name = "Tight End",
+             Team = "Team",
+             team_wordmark = "",
+             fd_oe = "First Downs Over Expected") %>%
+  gtExtras::gt_img_rows(team_wordmark) %>%
+  gtExtras::gt_theme_espn() %>%
+  tab_header(title = "First Downs Over Expected (FDOE) Among Top TEs since 2013",
+             subtitle = "Nate Yellin | Field General Analytics | nflfastR")
+
+## Now, time for the EPA/Play Over Expected Table
+
+epa_graph <- te_gt_unique %>%
+  select(receiver_player_name, Team, team_wordmark, epa_oe) %>%
+  arrange(-epa_oe) %>%
+  head(10)
+
+epa_graph[6,] <- waller_epa
+
+epa_graph %>%
+  as.data.frame() %>%
+  head(10) %>%
+  gt() %>%
+  cols_label(receiver_player_name = "Tight End",
+             Team = "Team",
+             team_wordmark = "",
+             epa_oe = "EPA/Play Over Expected") %>%
+  gtExtras::gt_img_rows(team_wordmark) %>%
+  gtExtras::gt_theme_espn() %>%
+  tab_header(title = "EPA/Play Over Expected Among Top TEs since 2013",
+             subtitle = "Nate Yellin | Field General Analytics | nflfastR")
+
+# Basic FD and EPA cumulative chart
+
+sum_graph <- joined %>%
+  group_by(receiver_player_name, season.y) %>%
+  mutate(tgt = sum(complete_pass + incomplete_pass)) %>%
+  filter(tgt >= 500) %>%
+  filter(season.y %in% c('2013', '2014', '2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022')) %>%
+  unique() %>%
+  ungroup(season.y) %>%
+  filter(complete_pass == 1, air_yards < yardline_100, !is.na(xyac_epa)) %>%
+  summarize(
+  Team = posteam,
+  epa_oe = mean(yac_epa - xyac_epa),
+  fd = first_down,
+  epa = sum(epa))
+  
+sum_graph <- sum_graph[!duplicated(sum_graph$receiver_player_name), ]
+
+sum_graph <- sum_graph %>%
+  left_join(teams_colors_logos, by = c("Team" = "team_abbr")) %>%
+  select(receiver_player_name,
+         Team,
+         team_wordmark.y,
+         fd,
+         epa) %>%
+  mutate(epa = round(epa, digits = 0)) %>%
+  arrange(-epa)
+
+sum_graph %>%
+  as.data.frame() %>%
+  head(10) %>%
+  gt() %>%
+  cols_label(receiver_player_name = "Tight End",
+             Team = "Team",
+             team_wordmark.y = "",
+             fd = "Career First Downs",
+             epa = "Career EPA") %>%
+  gtExtras::gt_img_rows(team_wordmark.y) %>%
+  gtExtras::gt_theme_espn() %>%
+  tab_header(title = "Total First Downs + EPA Among Top TEs since Kelce's Debut (2013)",
+             subtitle = "Nate Yellin | Field General Analytics | nflfastR")
+
+#################################### Regular Season | Playoff Stats | Accolades all gathered from NFL.com into csv, then formatted in R
+
+library(tidyverse) 
+library(nflfastR)
+library(ggimage)
+library(gt)
+library(kableExtra)
+
+TE_regular_szn <- read_csv("Tight End Charts - Regular Season.csv") 
+
+colnames(TE_regular_szn)[colnames(TE_regular_szn) == "Tight End"] <- "tight_end"
+colnames(TE_regular_szn)[colnames(TE_regular_szn) == "Games Played"] <- "games_played"
+colnames(TE_regular_szn)[colnames(TE_regular_szn) == "Rec Yards"] <- "rec_yards"
+colnames(TE_regular_szn)[colnames(TE_regular_szn) == "Rec TDs"] <- "rec_tds"
+
+TE_regular_szn[4, "Wordmark"] <- "https://github.com/guga31bb/nflfastR-data/raw/master/wordmarks/DEN.png"
+
+
+TE_regular_szn %>%
+  as.data.frame() %>%
+  gt() %>%
+  cols_label(tight_end = "Tight End",
+             Team = "Team",
+             Wordmark = "",
+             games_played = "Games Played",
+             Rec = "Receptions",
+             rec_yards = "Receiving Yards",
+             YPC = "YPC",
+             rec_tds = "Receiving Touchdowns") %>%
+  gtExtras::gt_img_rows(Wordmark) %>%
+  gtExtras::gt_theme_espn() %>%
+  tab_header(title = "Career Regular Season Statistics Among Top 5 TEs",
+             subtitle = "Nate Yellin + Jack Gewanter | Field General Analytics | nflfastR")
+
+#######
+playoff_szn <- read_csv("Tight End Charts - Playoffs.csv")
+playoff_szn[4, "Wordmark"] <- "https://github.com/guga31bb/nflfastR-data/raw/master/wordmarks/DEN.png"
+
+playoff_szn %>%
+  as.data.frame() %>%
+  gt() %>%
+  cols_label(Tight_End = "Tight End",
+             Team = "Team",
+             Wordmark = "",
+             Games_Played = "Games Played",
+             Rec = "Receptions",
+             Rec_Yards = "Receiving Yards",
+             YPC = "YPC",
+             Rec_TDs = "Receiving Touchdowns") %>%
+  gtExtras::gt_img_rows(Wordmark) %>%
+  gtExtras::gt_theme_espn() %>%
+  tab_header(title = "Career Playoff Statistics Among Top 5 TEs",
+             subtitle = "Nate Yellin + Jack Gewanter | Field General Analytics | nflfastR")
+
+#####
+accolades <- read_csv("Tight End Charts - Accolades.csv")
+accolades[4, "Wordmark"] <- "https://github.com/guga31bb/nflfastR-data/raw/master/wordmarks/DEN.png"
+
+accolades %>%
+  as.data.frame() %>%
+  gt() %>%
+  cols_label(Tight_End = "Tight End",
+             Team = "Team",
+             Wordmark = "",
+             Pro_Bowl_Selections = "Pro Bowl Selections",
+             Super_Bowl_Rings = "Super Bowl Rings",
+             All_Pro_Selections = "All Pro Selections") %>%
+  gtExtras::gt_img_rows(Wordmark) %>%
+  gtExtras::gt_theme_espn() %>%
+  tab_header(title = "Accolades",
+             subtitle = "Nate Yellin + Jack Gewanter | Field General Analytics | nflfastR")
+
+
+
+
+
+
+
+
+

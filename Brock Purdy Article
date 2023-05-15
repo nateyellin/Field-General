@@ -1,0 +1,94 @@
+college_guys <- read_csv("Brock Purdy Effect Charts - Sheet1-3.csv")
+View(college_guys)
+View(teams_colors_logos)
+
+
+college_guys <- college_guys %>%
+  left_join(teams_colors_logos, by = c("Team" = "team_abbr")) %>%
+  select(c("Quarterback", "Round", "Pick", "team_logo_espn"))
+
+college_guys <- college_guys %>%
+  select("Quarterback","team_logo_espn","Round", "Pick")
+
+college_guys %>%
+  as.data.frame() %>%
+  gt() %>%
+  cols_label(Quarterback = "Quarterback",
+             Round = "Round",
+             Pick = "Pick",
+             team_logo_espn = "Team") %>%
+gtExtras::gt_img_rows(team_logo_espn) %>% 
+  gtExtras::gt_theme_espn() %>%
+  tab_header(title = "2023 NFL Draft Quarterback Class",
+             subtitle = "Nate Yellin | Field General Analytics | nflfastR")
+
+library(tidyverse)
+library(ggthemes)
+
+## Brock Purdy 2022 Construction
+
+pbp <- nflfastR::load_pbp(2022)
+
+
+
+pbp_p <- pbp %>%
+  filter(qb_dropback == 1) %>%
+  filter(week >= 13 & week <= 22) %>%
+  filter(!is.na(epa)) %>%
+  group_by(passer) %>%
+  mutate(total_passes = n()) %>%
+  ungroup() %>%
+  filter(total_passes >= 50)
+
+pbp_p$dropback_num <- ave(pbp_p$epa, pbp_p$passer, FUN = seq_along)
+
+pbp_p$csum <- ave(pbp_p$epa, pbp_p$passer, FUN=cumsum)
+
+purdy_epa <- pbp_p %>%
+  filter(passer == "B.Purdy")
+
+pbp_p %>% 
+  ggplot(aes(x = dropback_num, y = csum)) +
+  geom_smooth(aes(group = passer), color = "gray", se = FALSE, size = 1.5) +
+  geom_smooth(data = purdy_epa, aes(group = passer), color = "#AA0000", se = FALSE, size = 3) +
+  labs(x = "Dropback Number",
+       y = "Cumulative EPA",
+       title = "Brock Purdy's Cumulative EPA This Season (Week 13 - NFC Championship)",
+       subtitle = "All other passers from Week 13 into the Playoffs in grey",
+       caption = "By Nate Yellin | Field General Analytics") +
+  theme_fivethirtyeight() +
+  theme(axis.title.x = element_text(face = "bold"),
+        axis.title.y = element_text(face = "bold"))
+
+# Generate the plot
+library(ggplot2)
+
+pbp_p %>% 
+  ggplot(aes(x = dropback_num, y = csum)) +
+  geom_smooth(aes(group = passer), color = "gray", se = FALSE, size = 1.5) +
+  geom_smooth(data = purdy_epa, aes(group = passer), color = "#AA0000", se = FALSE, size = 3) +
+  labs(x = "Dropback Number",
+       y = "Cumulative EPA",
+       title = element_text(face = "bold", size = 14, hjust = 0.5, margin = margin(b = 10), 
+                            text = "Brock Purdy's Cumulative EPA This Season (Week 13 and on)"),
+       subtitle = element_text(face = "plain", size = 12, hjust = 0.5, margin = margin(b = 20), 
+                               text = "All other passers from Week 13 into the Playoffs in grey"),
+       caption = "By Nate Yellin | Field General Analytics") +
+  theme_fivethirtyeight() +
+  theme(axis.title.x = element_text(face = "bold"),
+        axis.title.y = element_text(face = "bold"))
+
+
+pbp_p %>% 
+  ggplot(aes(x = dropback_num, y = csum)) +
+  geom_smooth(aes(group = passer), color = "gray", se = FALSE, size = 1.5) +
+  geom_smooth(data = purdy_epa, aes(group = passer), color = "#AA0000", se = FALSE, size = 3) +
+  theme_fivethirtyeight() +
+  labs(x = "Dropback Number",
+       y = "Cumulative EPA",
+       title = "Brock Purdy's Cumulative EPA This Season (Week 13 and on)",
+       subtitle = "All other passers from Week 13 into the Playoffs in grey",
+       caption = "By Nate Yellin | Field General Analytics") +
+
+  labs(x = "Dropback Number", y = "Cumulative EPA")
+
